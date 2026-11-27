@@ -50,15 +50,25 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: Build debug APK
+      - name: Decode release keystore
         if: env.skip != 'true'
-        run: bash gradlew assembleDebug
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/busboard-release.p12"
+          test -s "$RUNNER_TEMP/busboard-release.p12" || { echo "keystore decode failed"; exit 1; }
+      - name: Build signed release APK
+        if: env.skip != 'true'
+        run: bash gradlew assembleRelease
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/busboard-release.p12
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       - name: Create release with APK
         if: env.skip != 'true'
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk "BusBoard-${{ steps.version.outputs.tag }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "BusBoard-${{ steps.version.outputs.tag }}.apk"
           gh release create "${{ steps.version.outputs.tag }}" "BusBoard-${{ steps.version.outputs.tag }}.apk" \
             --title "BusBoard ${{ steps.version.outputs.tag }}" \
-            --notes "BusBoard ${{ steps.version.outputs.tag }}: auto update check on open, Live widget refresh, up to 8 widget slots."
+            --notes "BusBoard ${{ steps.version.outputs.tag }}: direct APK download from the update dialog, Out/Back widget direction (green/red bus numbers), signed release build."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
