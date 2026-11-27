@@ -12,12 +12,34 @@ public final class BoardWidget extends AppWidgetProvider {
     private static final String REFRESH="sg.busboard.REFRESH";
     private static final String TOGGLE_LIVE="sg.busboard.TOGGLE_LIVE";
     private static final String LIVE_ENABLED="widget.live";
+    private static final String LIVE_STARTED_AT="live.started_at_ms";
     private static final int STANDARD_ROWS=4;
     private static final int OUT_COLOR=0xff17613a;
-    private static final int BACK_COLOR=0xffa3222a;
+    private static final int RETURN_COLOR=0xffa3222a;
 
     static boolean isLive(Context c) {
         return Board.prefs(c).getBoolean(LIVE_ENABLED,false);
+    }
+    private static void setLive(Context c,boolean live) {
+        SharedPreferences.Editor edit=Board.prefs(c).edit().putBoolean(LIVE_ENABLED,live);
+        if(live) edit.putLong(LIVE_STARTED_AT,System.currentTimeMillis());
+        else edit.remove(LIVE_STARTED_AT);
+        edit.apply();
+    }
+    static long liveElapsedMs(Context c) {
+        SharedPreferences prefs=Board.prefs(c);
+        long now=System.currentTimeMillis();
+        long started=prefs.getLong(LIVE_STARTED_AT,0);
+        if(started==0){
+            // Live may already be enabled when upgrading from a version without a timestamp.
+            prefs.edit().putLong(LIVE_STARTED_AT,now).apply();
+            return 0;
+        }
+        return Math.max(0,now-started);
+    }
+    static void turnLiveOff(Context c) {
+        setLive(c,false);
+        RefreshJob.stopLive(c);
     }
     @Override public void onUpdate(Context c,AppWidgetManager manager,int[] ids) {
         draw(c);
@@ -33,10 +55,10 @@ public final class BoardWidget extends AppWidgetProvider {
     @Override public void onReceive(Context c,Intent intent) {
         if(TOGGLE_LIVE.equals(intent.getAction())) {
             boolean live=!isLive(c);
-            Board.prefs(c).edit().putBoolean(LIVE_ENABLED,live).apply();
+            if(live) setLive(c,true);
+            else turnLiveOff(c);
             draw(c);
             if(live) RefreshJob.startLive(c);
-            else RefreshJob.stopLive(c);
         } else if(REFRESH.equals(intent.getAction())) {
             PendingResult pending=goAsync();
             Handler handler=new Handler(Looper.getMainLooper());
@@ -58,6 +80,7 @@ public final class BoardWidget extends AppWidgetProvider {
     }
     static void draw(Context c) { draw(c,false); }
     private static void draw(Context c,boolean updating) {
+        RefreshJob.expireLive(c);
         AppWidgetManager manager=AppWidgetManager.getInstance(c);
         int[] ids=manager.getAppWidgetIds(new ComponentName(c,BoardWidget.class));
         if(ids.length==0) return;
@@ -69,7 +92,8 @@ public final class BoardWidget extends AppWidgetProvider {
             Bundle options=manager.getAppWidgetOptions(id);
             int height=options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,0);
             // The standard layout needs 62 dp for its header and padding and 52 dp per row.
-            boolean compact=slots.size()>STANDARD_ROWS && (height==0 || height<62+52*slots.size());
+            boolean compact=height==0?slots.size()>STANDARD_ROWS
+                    :!slots.isEmpty() && height<62+52*slots.size();
             RemoteViews sized;
             if(compact){
                 if(compactBoard==null) compactBoard=build(c,slots,live,updating,true);
@@ -78,7 +102,7 @@ public final class BoardWidget extends AppWidgetProvider {
                 if(standardBoard==null) standardBoard=build(c,slots,live,updating,false);
                 sized=standardBoard;
             }
-            if(compact || (slots.size()==STANDARD_ROWS && height>0 && height<275)){
+            if(compact){
                 int side=Math.round(13*density);
                 sized=sized.clone();
                 sized.setViewPadding(R.id.board,side,0,side,0);
@@ -109,7 +133,7 @@ public final class BoardWidget extends AppWidgetProvider {
             Board.Predictions predictions=new Board.Predictions(c,s,now);
             RemoteViews row=new RemoteViews(c.getPackageName(),compact?R.layout.row_compact:R.layout.row);
             row.setTextViewText(R.id.service,s.service);
-            row.setTextColor(R.id.service,Board.isWidgetBack(c,s.id)?BACK_COLOR:OUT_COLOR);
+            row.setTextColor(R.id.service,Board.isWidgetBack(c,s.id)?RETURN_COLOR:OUT_COLOR);
             String status=predictions.status(now);
             row.setTextViewText(R.id.stop,s.name+" · "+s.id+(status.isEmpty()?"":" · "+status));
             row.setViewVisibility(R.id.separator,index==0?View.INVISIBLE:View.VISIBLE);

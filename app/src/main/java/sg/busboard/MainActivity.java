@@ -19,6 +19,7 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 public class MainActivity extends BoardActivity {
     private static final String RELEASE_API="https://api.github.com/repos/ChaiMingKai/BusBoard/releases/latest";
@@ -196,6 +197,8 @@ public class MainActivity extends BoardActivity {
         }
         gap(content,9);
         content.addView(button("Live refresh: every "+liveIntervalLabel(RefreshJob.liveIntervalMs(this)),false,this::chooseLiveInterval));
+        gap(content,9);
+        content.addView(button("Live auto-off: "+liveAutoOffLabel(RefreshJob.liveAutoOffMs(this)),false,this::chooseLiveAutoOff));
         gap(content,22);LinearLayout legend=row();legend.addView(image(R.drawable.sd),dp(24),dp(17));legend.addView(text("  Single-decker     ",12,MUTED,"sans-serif"));
         legend.addView(image(R.drawable.dd),dp(24),dp(17));legend.addView(text("  Double-decker",12,MUTED,"sans-serif"));content.addView(legend);
         gap(content,9);
@@ -215,7 +218,7 @@ public class MainActivity extends BoardActivity {
         gap(content,9);
         LinearLayout line=row();
         flex(line,text(slot.name+" ("+slot.id+")",14,INK,"sans-serif"));
-        String direction=Board.isWidgetBack(this,slot.id)?"Back":"Out";
+        String direction=Board.isWidgetBack(this,slot.id)?"Return":"Out";
         TextView toggle=button(direction,false,()->{
             Board.setWidgetBack(this,slot.id,!Board.isWidgetBack(this,slot.id));
             render();
@@ -225,33 +228,54 @@ public class MainActivity extends BoardActivity {
         content.addView(line);
     }
 
-    private static String liveIntervalLabel(long intervalMs){
-        long seconds=intervalMs/1000L;
-        return seconds+(seconds==1?" second":" seconds");
+    private static String liveIntervalLabel(BigInteger intervalMs){
+        BigInteger seconds=intervalMs.divide(BigInteger.valueOf(1000L));
+        return seconds+(seconds.equals(BigInteger.ONE)?" second":" seconds");
+    }
+    private static String liveAutoOffLabel(BigInteger limitMs){
+        BigInteger minutes=limitMs.divide(BigInteger.valueOf(60000L));
+        if(minutes.signum()==0) return "Never";
+        return "after "+minutes+(minutes.equals(BigInteger.ONE)?" minute":" minutes");
     }
     private void chooseLiveInterval(){
+        chooseLiveDuration("Live refresh interval","Enter a whole number of seconds, 1 or more.",
+                RefreshJob.liveIntervalMs(this),1000L,BigInteger.ONE,ms->RefreshJob.setLiveIntervalMs(this,ms));
+    }
+    private void chooseLiveAutoOff(){
+        chooseLiveDuration("Live auto-off","Enter a whole number of minutes, 0 or more. Use 0 to keep Live on.",
+                RefreshJob.liveAutoOffMs(this),60000L,BigInteger.ZERO,ms->RefreshJob.setLiveAutoOffMs(this,ms));
+    }
+    private void chooseLiveDuration(String title,String message,BigInteger durationMs,long unitMs,
+            BigInteger minimum,Consumer<BigInteger> save){
+        BigInteger unit=BigInteger.valueOf(unitMs);
         EditText input=new EditText(this);
         input.setSingleLine();
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setText(Long.toString(RefreshJob.liveIntervalMs(this)/1000L));
+        input.setText(durationMs.divide(unit).toString());
         input.setSelectAllOnFocus(true);
         LinearLayout field=column();
         pad(field,20,0);
         field.addView(input);
-        new AlertDialog.Builder(this).setTitle("Live refresh interval")
-                .setMessage("Enter a whole number of seconds (1–60).")
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(title)
+                .setMessage(message)
                 .setView(field)
-                .setPositiveButton("Save",(dialog,which)->{
-                    long seconds;
-                    try {
-                        seconds=new BigInteger(input.getText().toString().trim())
-                                .max(BigInteger.ONE).min(BigInteger.valueOf(60)).longValue();
-                    } catch(NumberFormatException e) {
-                        return;
-                    }
-                    RefreshJob.setLiveIntervalMs(this,seconds*1000L);
-                    render();
-                }).setNegativeButton("Cancel",null).show();
+                .setPositiveButton("Save",null).setNegativeButton("Cancel",null).show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view->{
+            BigInteger value;
+            try {
+                value=new BigInteger(input.getText().toString().trim());
+            } catch(NumberFormatException e) {
+                input.setError(message);
+                return;
+            }
+            if(value.compareTo(minimum)<0){
+                input.setError(message);
+                return;
+            }
+            save.accept(value.multiply(unit));
+            dialog.dismiss();
+            render();
+        });
     }
     private void preview(){
         LinearLayout ticket=column(); ticket.setBackground(shape(WHITE,17,LINE)); ticket.setClipToOutline(true);content.addView(ticket);
