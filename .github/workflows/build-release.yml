@@ -186,6 +186,6 @@ jobs:
             "${{ steps.version.outputs.tag }}" \
             "BusBoard-${{ steps.version.outputs.tag }}.apk" \
             --title "BusBoard ${{ steps.version.outputs.tag }}" \
-            --notes "BusBoard ${{ steps.version.outputs.tag }}: direct APK download from the update dialog, Out/Back widget direction (green/red bus numbers), signed release build."
+            --notes "BusBoard ${{ steps.version.outputs.tag }}: resizable widget, Out/Return direction colours, Live auto-off, unlimited Live durations."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
