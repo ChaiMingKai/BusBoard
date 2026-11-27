@@ -29,7 +29,7 @@ public final class BoardWidget extends AppWidgetProvider {
     private static final int DEFAULT_HEIGHT_DP=110;
     private static final int MAX_SIZE_LAYOUTS=16;
     private static final int OUT_COLOR=0xff17613a;
-    private static final int RETURN_COLOR=0xffa3222a;
+    private static final int RETURN_TEXT_COLOR=0xffffffff;
 
     static boolean isLive(Context c) {
         return Board.prefs(c).getBoolean(LIVE_ENABLED,false);
@@ -197,7 +197,10 @@ public final class BoardWidget extends AppWidgetProvider {
             Board.Slot s=slots.get(index);
             Board.Predictions predictions=new Board.Predictions(c,s,now);
             RemoteViews row=new RemoteViews(c.getPackageName(),compact?R.layout.row_compact:R.layout.row);
-            int color=Board.isWidgetBack(c,s.id)?RETURN_COLOR:OUT_COLOR;
+            boolean isReturn=Board.isWidgetBack(c,s.id);
+            int color=isReturn?RETURN_TEXT_COLOR:OUT_COLOR;
+            row.setInt(R.id.service,"setBackgroundResource",isReturn?R.drawable.line_bg_return:R.drawable.line_bg);
+            row.setTextColor(R.id.service,color);
             SpannableString service=new SpannableString(s.service);
             service.setSpan(new ForegroundColorSpan(color),0,service.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             row.setTextViewText(R.id.service,service);

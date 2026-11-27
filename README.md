@@ -1,4 +1,4 @@
-# Bus Board 1.8
+# Bus Board 1.9
 
 Bus Board is an Android 8.0+ Singapore bus arrivals app with a native home-screen widget. Open the app, select a stop and service, then tap **Add widget**. Save any number of services in the app. Choose up to eight under **Widget services** for your home screen. Existing saved services carry over when updating from 1.0. Search by bus number, stop code, road, or block numbers such as 523/525. Use the menu on a saved service to move, change, or remove it.
 
@@ -6,13 +6,13 @@ Each row shows the next three available predictions and the vehicle type supplie
 
 Resize the widget vertically on your home screen to suit the number of services you pinned. The header stays at the top and the rows share the available height. Shorter widgets use compact rows. If the widget is too short to show every service at once, tap the page indicator to see the next group.
 
-Under **Home screen widget** in the app, tap the **Out** or **Return** button beside a pinned stop to switch its direction. The setting is saved per stop and applies to all its pinned services. New stops default to **Out**, and previously saved directions carry over. Green bus numbers indicate **Out** and red numbers indicate **Return**.
+Under **Home screen widget** in the app, tap the **Out** or **Return** button beside a pinned stop to switch its direction. The setting is saved per stop and applies to all its pinned services. New stops default to **Out**, and previously saved directions carry over. **Out** has a dark green number on a lime pill. **Return** has a white number on a blue pill.
 
 Tap **Live** to enable live widget updates. Under **Home screen widget**, set **Live refresh** to any whole number of seconds from 1 upward. The default is 30 seconds. Set **Live auto-off** to any whole number of minutes from 0 upward. The default of 0 keeps Live on until you manually switch it off. A positive value turns Live off after that many minutes from when you switched it on, even while the app is closed. Android may defer background jobs. With Live off, Android schedules background widget refreshes approximately every 30 minutes.
 
 Tap **Browse stops** from the home page and use **Find a stop** to search the stop directory. The stop page shows all services at the selected stop with up to three predictions per service. Arrivals refresh every 30 seconds while the page is open.
 
-Bus Board checks for a new release when the home page comes to the foreground, with a 60-second guard between automatic checks after a successful request. When a new version is available, tap **Update** to open the direct GitHub download for the versioned APK (for example, `BusBoard-v1.8.apk`). If the APK link cannot be built or opened, the app falls back to the release page. Tap **Later** to stop automatic prompts until a newer release is available. Tap **Check for updates** on the home page to check immediately, including for releases you previously dismissed.
+Bus Board checks for a new release when the home page comes to the foreground, with a 60-second guard between automatic checks after a successful request. When a new version is available, tap **Update** to open the direct GitHub download for the versioned APK (for example, `BusBoard-v1.9.apk`). If the APK link cannot be built or opened, the app falls back to the release page. Tap **Later** to stop automatic prompts until a newer release is available. Tap **Check for updates** on the home page to check immediately, including for releases you previously dismissed.
 
 ## Build
 
