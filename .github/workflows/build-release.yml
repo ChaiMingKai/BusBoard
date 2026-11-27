@@ -186,6 +186,6 @@ jobs:
             "${{ steps.version.outputs.tag }}" \
             "BusBoard-${{ steps.version.outputs.tag }}.apk" \
             --title "BusBoard ${{ steps.version.outputs.tag }}" \
-            --notes "BusBoard ${{ steps.version.outputs.tag }}: instant update popup when entering the app, Return bus numbers turn red in the widget, widget rows grow when expanded."
+            --notes "BusBoard ${{ steps.version.outputs.tag }}: blue Return pill with white number, instant update popup when entering the app, widget rows grow when expanded."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
