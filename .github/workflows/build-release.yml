@@ -53,7 +53,7 @@ jobs:
       - name: Decode release keystore
         if: env.skip != 'true'
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/busboard-release.p12"
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/busboard-release.p12"
           test -s "$RUNNER_TEMP/busboard-release.p12" || { echo "keystore decode failed"; exit 1; }
           keytool -list -keystore "$RUNNER_TEMP/busboard-release.p12" -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -storetype PKCS12 > /dev/null || { echo "keystore invalid or wrong password"; exit 1; }
       - name: Build signed release APK
