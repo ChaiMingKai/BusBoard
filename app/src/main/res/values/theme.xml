@@ -1,0 +1,12 @@
+<resources>
+<style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:fontFamily">sans</item>
+    <item name="android:colorAccent">#006956</item>
+    <item name="android:windowLightStatusBar">true</item>
+    <item name="android:statusBarColor">#F5F6ED</item>
+    <item name="android:navigationBarColor">#F5F6ED</item>
+    <item name="android:windowLightNavigationBar">true</item>
+    <item name="android:windowBackground">#F5F6ED</item>
+</style>
+<string name="widget_desc">Up to four saved stop and service pairs, with the next three arrivals for each.</string>
+</resources>
