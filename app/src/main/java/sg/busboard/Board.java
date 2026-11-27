@@ -72,6 +72,23 @@ final class Board {
         for(int i=0;i<raw.length();i++) stops.add(new Stop(raw.getJSONArray(i)));
         return stops;
     }
+    static Collection<String> servicesAt(Context c, Stop stop) {
+        Map<String,String> services=new LinkedHashMap<>();
+        for(String service:stop.services) services.put(service.toUpperCase(Locale.ROOT),service);
+        try {
+            JSONArray live=new JSONArray(prefs(c).getString("data."+stop.id,"[]"));
+            for(int i=0;i<live.length();i++) {
+                JSONObject entry=live.optJSONObject(i);
+                if(entry==null) continue;
+                String service=entry.optString("no");
+                if(!service.isEmpty()) services.putIfAbsent(service.toUpperCase(Locale.ROOT),service);
+            }
+        } catch(JSONException ignored) { }
+        return services.values();
+    }
+    static boolean arrivalUpdateFailed(SharedPreferences prefs, String stopId) {
+        return prefs.getBoolean("error."+stopId,false);
+    }
     enum Occupancy {
         SEATS(R.drawable.seat,"Seats available",0xff006655,0xffb5e8cf),
         STANDING(R.drawable.standing,"Standing room",0xff8a5800,0xffffd184),
@@ -133,7 +150,7 @@ final class Board {
         Predictions(Context c, Slot s, long now) {
             SharedPreferences p=prefs(c);
             fetched=p.getLong("time."+s.id,0);
-            error=p.getBoolean("error."+s.id,false);
+            error=arrivalUpdateFailed(p,s.id);
             if (fetched==0 || now-fetched>MAX_AGE) return;
             try {
                 JSONArray services=new JSONArray(p.getString("data."+s.id,"[]"));
@@ -180,6 +197,9 @@ final class Board {
         active.put(id,future);
         future.whenComplete((v,e)->{ synchronized(Board.class){ active.remove(id,future); }});
         return future;
+    }
+    static CompletableFuture<Void> refreshStop(Context context, String stopId) {
+        return request(context.getApplicationContext(),stopId);
     }
     static CompletableFuture<Void> refresh(Context context, List<Slot> selection) {
         Context c=context.getApplicationContext();

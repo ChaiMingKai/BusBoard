@@ -4,13 +4,10 @@ import android.app.*;
 import android.appwidget.AppWidgetManager;
 import android.content.*;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.*;
-import android.text.*;
-import android.view.*;
+import android.os.Bundle;
+import android.text.InputType;
+import android.view.Gravity;
 import android.widget.*;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,68 +19,93 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
-public class MainActivity extends Activity {
+public class MainActivity extends BoardActivity {
     private static final String RELEASE_API="https://api.github.com/repos/ChaiMingKai/BusBoard/releases/latest";
     private static final String RELEASE_PAGE="https://github.com/ChaiMingKai/BusBoard/releases/latest";
-    private static final long[] LIVE_INTERVALS_MS={1000L,5000L,10000L,30000L};
-    private static final int PAPER=0xfff5f6ed, INK=0xff123d34, GREEN=0xff006956,
-            MUTED=0xff556b61, LIME=0xffe0f789, LINE=0xffcfdbcc, WHITE=Color.WHITE;
-    private final Handler handler=new Handler(Looper.getMainLooper());
+    private static final String LAST_UPDATE_CHECK="updates.last_check_ms";
+    private static final long UPDATE_CHECK_INTERVAL_MS=60*60*1000L;
     private final Runnable tick=new Runnable(){ public void run(){ refresh(); handler.postDelayed(this,30000); } };
-    private List<Board.Stop> catalog;
     private boolean loading, resumed;
-    private final ExecutorService searchWorker=Executors.newSingleThreadExecutor();
-    private Future<?> pendingSearch;
-    @Override public void onDestroy(){searchWorker.shutdownNow();super.onDestroy();}
-    private LinearLayout content;
-    private ScrollView scroll;
-    private int dp(float n){return Math.round(getResources().getDisplayMetrics().density*n);}
-    private GradientDrawable shape(int color,int radius,int border) {
-        GradientDrawable d=new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius));
-        if(border!=0) d.setStroke(dp(1),border); return d;
+    private UpdateCheck updateCheck;
+
+    private static final class UpdateCheck {
+        final CompletableFuture<UpdateResult> result;
+        boolean manual;
+
+        UpdateCheck(CompletableFuture<UpdateResult> result, boolean manual){
+            this.result=result;
+            this.manual=manual;
+        }
     }
-    private TextView text(String value,int size,int color,String face) {
-        TextView v=new TextView(this); v.setText(value); v.setTextSize(size); v.setTextColor(color);
-        v.setTypeface(Typeface.create(face,Typeface.NORMAL)); v.setIncludeFontPadding(false); return v;
+
+    private static final class UpdateResult {
+        final boolean success;
+        final String newerVersion;
+
+        UpdateResult(boolean success,String newerVersion){
+            this.success=success;
+            this.newerVersion=newerVersion;
+        }
     }
-    private TextView label(String value,int color) {
-        TextView v=text(value,11,color,"sans-serif-medium"); v.setLetterSpacing(.11f); return v;
-    }
-    private LinearLayout column(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);return v;}
-    private LinearLayout row(){LinearLayout v=new LinearLayout(this);v.setGravity(Gravity.CENTER_VERTICAL);return v;}
-    private void pad(View v,int x,int y){v.setPadding(dp(x),dp(y),dp(x),dp(y));}
-    private void gap(LinearLayout parent,int h){parent.addView(new View(this),1,dp(h));}
-    private void flex(LinearLayout parent,View child){parent.addView(child,new LinearLayout.LayoutParams(0,-2,1));}
-    private ImageView image(int res){ImageView i=new ImageView(this);i.setImageResource(res);i.setScaleType(ImageView.ScaleType.FIT_CENTER);return i;}
-    private void rule(LinearLayout v){View line=new View(this); line.setBackgroundColor(LINE); v.addView(line,-1,dp(1));}
-    private TextView button(String name,boolean primary,Runnable click){
-        TextView v=text(name,15,primary?WHITE:INK,"sans-serif-medium");v.setGravity(Gravity.CENTER);
-        v.setBackground(shape(primary?INK:WHITE,12,primary?0:LINE));pad(v,12,12);v.setMinHeight(dp(48));
-        v.setOnClickListener(w->click.run());v.setFocusable(true);return v;
-    }
+
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(PAPER);
-        if(Build.VERSION.SDK_INT>=35)scroll.setOnApplyWindowInsetsListener((view,insets)->{
-            android.graphics.Insets edges=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
-            view.setPadding(edges.left,edges.top,edges.right,edges.bottom);return insets;
-        });
-        content=column();pad(content,20,16);scroll.addView(content);setContentView(scroll);
-        CompletableFuture.supplyAsync(()->{
-            try{return Board.catalog(this);}catch(Exception e){return Collections.<Board.Stop>emptyList();}
-        }).thenAccept(list->runOnUiThread(()->{catalog=list;if(!isDestroyed())render();}));
+        updateCheck=(UpdateCheck)getLastNonConfigurationInstance();
+        if(updateCheck!=null) observeUpdateCheck();
         render();
-        if(state==null) CompletableFuture.runAsync(this::checkForUpdate);
     }
-    private void checkForUpdate(){
+    @Override public Object onRetainNonConfigurationInstance(){return updateCheck;}
+    @Override void onCatalogLoaded(){render();}
+
+    private void checkForUpdate(boolean manual){
+        if(updateCheck!=null){
+            if(manual) updateCheck.manual=true;
+            return;
+        }
+        SharedPreferences prefs=Board.prefs(this);
+        long now=System.currentTimeMillis();
+        long last=prefs.getLong(LAST_UPDATE_CHECK,0);
+        if(!manual && last>0 && now>=last && now-last<UPDATE_CHECK_INTERVAL_MS) return;
+        prefs.edit().putLong(LAST_UPDATE_CHECK,now).apply();
+
+        Context context=getApplicationContext();
+        updateCheck=new UpdateCheck(CompletableFuture.supplyAsync(()->fetchUpdate(context)),manual);
+        observeUpdateCheck();
+    }
+
+    private void observeUpdateCheck(){
+        updateCheck.result.thenRun(()->handler.post(this::showUpdateResult));
+    }
+
+    private void showUpdateResult(){
+        if(!resumed || isFinishing() || isDestroyed() || updateCheck==null) return;
+        UpdateResult result=updateCheck.result.getNow(null);
+        if(result==null) return;
+        boolean manual=updateCheck.manual;
+        updateCheck=null;
+        if(result.newerVersion!=null){
+            new AlertDialog.Builder(this).setTitle("Update available")
+                    .setMessage("Bus Board "+result.newerVersion+" is available.")
+                    .setPositiveButton("Update",(dialog,which)->openReleasePage())
+                    .setNegativeButton("Later",null).show();
+        } else if(manual){
+            Toast.makeText(this,result.success?"You're up to date":"Couldn't check for updates. Try again later.",Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openReleasePage(){
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASE_PAGE)));
+        } catch(ActivityNotFoundException | SecurityException ignored) {
+            Toast.makeText(this,"Couldn't open the release page.",Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private static UpdateResult fetchUpdate(Context context){
         HttpURLConnection connection=null;
         try {
-            String installed=getPackageManager().getPackageInfo(getPackageName(),0).versionName;
+            String installed=context.getPackageManager().getPackageInfo(context.getPackageName(),0).versionName;
             connection=(HttpURLConnection)new URL(RELEASE_API).openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(8000);
@@ -91,16 +113,12 @@ public class MainActivity extends Activity {
             connection.setUseCaches(false);
             connection.setRequestProperty("Accept","application/vnd.github+json");
             connection.setRequestProperty("User-Agent","BusBoard/"+installed);
-            if(connection.getResponseCode()!=HttpURLConnection.HTTP_OK) return;
+            if(connection.getResponseCode()!=HttpURLConnection.HTTP_OK) return new UpdateResult(false,null);
             String tag=new JSONObject(Board.read(connection.getInputStream())).getString("tag_name");
             String latest=tag.startsWith("v")?tag.substring(1):tag;
-            if(isNewerVersion(latest,installed)) runOnUiThread(()->{
-                if(!resumed || isFinishing() || isDestroyed()) return;
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASE_PAGE)));
-                } catch(ActivityNotFoundException | SecurityException ignored) { }
-            });
-        } catch(IOException | JSONException | PackageManager.NameNotFoundException ignored) {
+            return new UpdateResult(true,isNewerVersion(latest,installed)?latest:null);
+        } catch(IOException | JSONException | PackageManager.NameNotFoundException | SecurityException e) {
+            return new UpdateResult(false,null);
         } finally {
             if(connection!=null) connection.disconnect();
         }
@@ -118,7 +136,13 @@ public class MainActivity extends Activity {
         }
         return false;
     }
-    @Override public void onResume(){super.onResume();resumed=true;tick.run();}
+    @Override public void onResume(){
+        super.onResume();
+        resumed=true;
+        tick.run();
+        checkForUpdate(false);
+        showUpdateResult();
+    }
     @Override public void onPause(){resumed=false;handler.removeCallbacks(tick);super.onPause();}
     private void refresh(){
         if(loading || Board.slots(this).isEmpty()){render();return;}
@@ -139,6 +163,8 @@ public class MainActivity extends Activity {
         gap(content,5);content.addView(text("My departures",36,INK,"sans-serif-medium"));gap(content,16);
         if(slots.isEmpty()) preview();
         content.addView(button(slots.isEmpty()?"+   Choose my first service":"+   Find a bus or stop",true,()->pickStop(-1)));
+        gap(content,9);
+        content.addView(button("Browse stops",false,()->startActivity(new Intent(this,StopActivity.class))));
         if(!slots.isEmpty()) {
             gap(content,12);LinearLayout head=row();flex(head,label("SAVED SERVICES  ·  "+slots.size(),MUTED));
             TextView choose=button("Widget services",false,this::chooseWidget);choose.setTextSize(13);head.addView(choose);
@@ -159,6 +185,11 @@ public class MainActivity extends Activity {
         addOccupancyKey(crowdLegend,Board.Occupancy.STANDING,"Standing");
         addOccupancyKey(crowdLegend,Board.Occupancy.LIMITED,"Limited");
         content.addView(crowdLegend);
+        gap(content,12);
+        content.addView(button("Check for updates",false,()->{
+            Toast.makeText(this,"Checking for updates…",Toast.LENGTH_SHORT).show();
+            checkForUpdate(true);
+        }));
         gap(content,12);content.addView(text("Arrivals via ArriveLah · LTA DataMall",11,MUTED,"sans-serif"));
     }
     private static String liveIntervalLabel(long intervalMs){
@@ -166,17 +197,26 @@ public class MainActivity extends Activity {
         return seconds+(seconds==1?" second":" seconds");
     }
     private void chooseLiveInterval(){
-        long current=RefreshJob.liveIntervalMs(this);
-        String[] choices=new String[LIVE_INTERVALS_MS.length];
-        int checked=-1;
-        for(int i=0;i<LIVE_INTERVALS_MS.length;i++){
-            choices[i]=liveIntervalLabel(LIVE_INTERVALS_MS[i]);
-            if(LIVE_INTERVALS_MS[i]==current) checked=i;
-        }
+        EditText input=new EditText(this);
+        input.setSingleLine();
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setText(Long.toString(RefreshJob.liveIntervalMs(this)/1000L));
+        input.setSelectAllOnFocus(true);
+        LinearLayout field=column();
+        pad(field,20,0);
+        field.addView(input);
         new AlertDialog.Builder(this).setTitle("Live refresh interval")
-                .setSingleChoiceItems(choices,checked,(dialog,index)->{
-                    RefreshJob.setLiveIntervalMs(this,LIVE_INTERVALS_MS[index]);
-                    dialog.dismiss();
+                .setMessage("Enter a whole number of seconds (1–60).")
+                .setView(field)
+                .setPositiveButton("Save",(dialog,which)->{
+                    long seconds;
+                    try {
+                        seconds=new BigInteger(input.getText().toString().trim())
+                                .max(BigInteger.ONE).min(BigInteger.valueOf(60)).longValue();
+                    } catch(NumberFormatException e) {
+                        return;
+                    }
+                    RefreshJob.setLiveIntervalMs(this,seconds*1000L);
                     render();
                 }).setNegativeButton("Cancel",null).show();
     }
@@ -193,28 +233,11 @@ public class MainActivity extends Activity {
         arrivalCell(line,new Board.Arrival(now+420000,"SD","LSD",true),now);
         body.addView(line);gap(content,11);
     }
-    private TextView route(String service){
-        TextView v=text(service,23,INK,"sans-serif-condensed-medium");v.setBackground(shape(LIME,8,0));pad(v,9,3);v.setGravity(Gravity.CENTER);v.setMinWidth(dp(53));return v;
-    }
     private void addOccupancyKey(LinearLayout legend,Board.Occupancy occupancy,String label){
         ImageView icon=image(occupancy.icon);icon.setColorFilter(occupancy.onPaper);
         legend.addView(icon,dp(18),dp(18));
         TextView name=text(label,12,MUTED,"sans-serif");name.setPadding(dp(3),0,dp(10),0);
         legend.addView(name);
-    }
-    private void arrivalCell(LinearLayout parent,Board.Arrival a,long now){
-        parent.setBaselineAligned(false);
-        View cell=getLayoutInflater().inflate(R.layout.arrival_cell,parent,false);
-        TextView eta=cell.findViewById(R.id.eta);
-        eta.setText(a==null?"—":a.eta(now));eta.setTextColor(a==null?MUTED:INK);
-        ImageView deck=cell.findViewById(R.id.deck);
-        ImageView crowd=cell.findViewById(R.id.crowd);
-        if(a!=null){
-            deck.setImageResource(a.icon(false));
-            crowd.setImageResource(a.occupancy.icon);crowd.setColorFilter(a.occupancy.onPaper);
-        }
-        cell.setContentDescription(a==null?"No arrival prediction":a.description(now));
-        parent.addView(cell);
     }
     private void savedCard(Board.Slot s,int index){
         long now=System.currentTimeMillis();
@@ -223,7 +246,7 @@ public class MainActivity extends Activity {
         LinearLayout head=row();flex(head,text(s.name,16,INK,"sans-serif-medium"));
         TextView edit=text("•••",17,MUTED,"sans-serif");edit.setGravity(Gravity.CENTER);edit.setContentDescription("Manage service "+s.service+" at "+s.name);
         edit.setOnClickListener(v->manage(index,s));edit.setFocusable(true);head.addView(edit,dp(44),dp(44));card.addView(head);
-        LinearLayout line=row();line.addView(route(s.service));for(int i=0;i<3;i++)arrivalCell(line,i<p.arrivals.size()?p.arrivals.get(i):null,now);card.addView(line);
+        card.addView(arrivalRow(s.service,p.arrivals,now));
         gap(card,8);String info=p.status(now);
         if(info.isEmpty())info="Updated "+Board.CLOCK.format(Instant.ofEpochMilli(p.fetched))+" · min";
         card.addView(text(s.id+(s.pinned?"  ·  Widget":"")+"  ·  "+info,12,MUTED,"sans-serif"));gap(card,3);
@@ -259,66 +282,12 @@ public class MainActivity extends Activity {
                     Board.refresh(this,Board.widgetSlots(this)).whenComplete((v,e)->runOnUiThread(()->{if(resumed&&!isDestroyed())render();}));
                 }).setNegativeButton("Cancel",null).show();
     }
-    private static final class SearchRow {
-        final Board.Stop stop;
-        final StopSearch.Match match;
-        SearchRow(Board.Stop stop,StopSearch.Match match){this.stop=stop;this.match=match;}
-    }
     private void pickStop(int index){pickStop(index,"");}
     private void pickStop(int index,String previous){
-        if(catalog==null || catalog.isEmpty()){Toast.makeText(this,catalog==null?"Loading stops…":"Stop directory unavailable",Toast.LENGTH_SHORT).show();return;}
-        Dialog dialog=new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout box=column();box.setBackgroundColor(PAPER);pad(box,16,14);
-        LinearLayout heading=row();flex(heading,text("Find a bus or stop",23,INK,"sans-serif-medium"));
-        heading.addView(button("Close",false,dialog::dismiss));box.addView(heading);gap(box,10);
-        EditText query=new EditText(this);query.setSingleLine();query.setHint("Bus, block, stop code or road");query.setTextSize(16);
-        query.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        query.setText(previous);query.setSelection(previous.length());box.addView(query);
-        TextView status=text("Searching…",13,MUTED,"sans-serif");pad(status,4,8);box.addView(status);
-        ListView list=new ListView(this);list.setDividerHeight(dp(1));box.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        List<SearchRow> results=new ArrayList<>();
-        ArrayAdapter<SearchRow> adapter=new ArrayAdapter<SearchRow>(this,android.R.layout.simple_list_item_1,results){
-            @Override public View getView(int position,View convert,ViewGroup parent){
-                SearchRow result=getItem(position);Board.Stop stop=result.stop;
-                LinearLayout item=column();pad(item,4,9);
-                String prefix=result.match.bus==null?"":"Bus "+result.match.bus+"  ·  ";
-                item.addView(text(prefix+stop.name,16,INK,"sans-serif-medium"));gap(item,3);
-                item.addView(text(stop.id+"  ·  "+stop.road,13,MUTED,"sans-serif"));return item;
-            }
-        };
-        list.setAdapter(adapter);
-        Runnable search=()->{
-            String input=query.getText().toString();
-            if(pendingSearch!=null)pendingSearch.cancel(true);
-            list.setEnabled(false);status.setText("Searching…");
-            pendingSearch=searchWorker.submit(()->{
-                StopSearch.Query q=new StopSearch.Query(input);List<SearchRow> matches=new ArrayList<>();
-                for(Board.Stop stop:catalog){
-                    if(Thread.currentThread().isInterrupted())return;
-                    StopSearch.Match match=q.match(stop.index);
-                    if(match!=null)matches.add(new SearchRow(stop,match));
-                }
-                matches.sort(Comparator.comparingInt(r->r.match.score));
-                runOnUiThread(()->{
-                    if(!dialog.isShowing() || !input.contentEquals(query.getText()))return;
-                    results.clear();results.addAll(matches);adapter.notifyDataSetChanged();list.setSelection(0);list.setEnabled(true);
-                    status.setText(results.isEmpty()?"No matches. Try a bus number, road or block number.":results.size()+(results.size()==1?" stop":" stops"));
-                });
-            });
-        };
-        query.addTextChangedListener(new TextWatcher(){
-            public void onTextChanged(CharSequence s,int start,int before,int count){search.run();}
-            public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void afterTextChanged(Editable e){}
+        showStopSearch("Find a bus or stop",previous,(stop,match,query)->{
+            if(match.bus!=null)saveService(index,stop,match.bus);
+            else pickService(index,stop,query);
         });
-        list.setOnItemClickListener((parent,view,pos,id)->{
-            SearchRow result=results.get(pos);String input=query.getText().toString();dialog.dismiss();
-            if(result.match.bus!=null)saveService(index,result.stop,result.match.bus);
-            else pickService(index,result.stop,input);
-        });
-        dialog.setContentView(box);
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-        dialog.show();dialog.getWindow().setLayout(-1,-1);query.requestFocus();search.run();
     }
     private void pickService(int index,Board.Stop stop,String query){
         String[] services=stop.services.toArray(new String[0]);
