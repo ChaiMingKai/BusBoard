@@ -16,17 +16,26 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Determine version and tag
         id: version
         run: |
           VERSION=$(grep -oP "versionName '\K[^']+" app/build.gradle)
           [ -n "$VERSION" ] || { echo "versionName not found"; exit 1; }
-          if [ -n "${{ inputs.tag }}" ]; then TAG="${{ inputs.tag }}"; else TAG="v$VERSION"; fi
+
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="v$VERSION"
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building release $TAG"
+
       - name: Skip if release already exists
         run: |
           if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
@@ -35,11 +44,13 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/setup-java@v4
         if: env.skip != 'true'
         with:
           distribution: temurin
           java-version: 17
+
       - name: Install Android SDK packages
         if: env.skip != 'true'
         run: |
@@ -48,14 +59,114 @@ jobs:
           else
             SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -n 1)
           fi
+
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Check release keystore chunks
+        if: env.skip != 'true'
+        env:
+          KEYSTORE_B64_1: ${{ secrets.ANDROID_KEYSTORE_B64_1 }}
+          KEYSTORE_B64_2: ${{ secrets.ANDROID_KEYSTORE_B64_2 }}
+          KEYSTORE_B64_3: ${{ secrets.ANDROID_KEYSTORE_B64_3 }}
+          KEYSTORE_B64_4: ${{ secrets.ANDROID_KEYSTORE_B64_4 }}
+        run: |
+          set -euo pipefail
+
+          ENCODED="$RUNNER_TEMP/busboard-release.b64"
+          : > "$ENCODED"
+
+          for n in 1 2 3 4; do
+            VAR="KEYSTORE_B64_$n"
+            VALUE="${!VAR:-}"
+            CLEAN=$(printf '%s' "$VALUE" | tr -d '[:space:]')
+
+            if [ -z "$CLEAN" ]; then
+              echo "ANDROID_KEYSTORE_B64_$n is empty"
+              exit 1
+            fi
+
+            case "$CLEAN" in
+              *[!A-Za-z0-9+/=]*)
+                echo "ANDROID_KEYSTORE_B64_$n contains invalid base64 characters"
+                exit 1
+                ;;
+            esac
+
+            printf '%s' "$CLEAN" >> "$ENCODED"
+            echo "ANDROID_KEYSTORE_B64_$n length: ${#CLEAN}"
+          done
+
+          LENGTH=$(wc -c < "$ENCODED")
+          REMAINDER=$((LENGTH % 4))
+
+          echo "Combined keystore base64 length: $LENGTH"
+          echo "Combined keystore base64 length % 4: $REMAINDER"
+
+          case "$REMAINDER" in
+            0|2|3)
+              ;;
+            *)
+              echo "Invalid base64 length remainder: $REMAINDER"
+              exit 1
+              ;;
+          esac
+
       - name: Decode release keystore
         if: env.skip != 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/busboard-release.p12"
-          test -s "$RUNNER_TEMP/busboard-release.p12" || { echo "keystore decode failed"; exit 1; }
-          keytool -list -keystore "$RUNNER_TEMP/busboard-release.p12" -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -storetype PKCS12 > /dev/null || { echo "keystore invalid or wrong password"; exit 1; }
+          set -euo pipefail
+
+          ENCODED="$RUNNER_TEMP/busboard-release.b64"
+          KEYSTORE="$RUNNER_TEMP/busboard-release.p12"
+
+          LENGTH=$(wc -c < "$ENCODED")
+          REMAINDER=$((LENGTH % 4))
+
+          case "$REMAINDER" in
+            0)
+              ;;
+            2)
+              printf '==' >> "$ENCODED"
+              ;;
+            3)
+              printf '=' >> "$ENCODED"
+              ;;
+            *)
+              echo "Cannot repair base64 padding"
+              exit 1
+              ;;
+          esac
+
+          if ! base64 --decode "$ENCODED" > "$KEYSTORE"; then
+            echo "keystore base64 decode failed"
+            exit 1
+          fi
+
+          DECODED_BYTES=$(wc -c < "$KEYSTORE")
+          echo "Decoded keystore bytes: $DECODED_BYTES"
+
+          if [ "$DECODED_BYTES" -ne 2660 ]; then
+            echo "Unexpected keystore size"
+            exit 1
+          fi
+
+          if ! keytool -list \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype PKCS12 \
+            -alias "$KEY_ALIAS" \
+            >/dev/null; then
+            echo "keystore invalid, alias incorrect, or password incorrect"
+            exit 1
+          fi
+
       - name: Build signed release APK
         if: env.skip != 'true'
         run: bash gradlew assembleRelease
@@ -64,11 +175,16 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
       - name: Create release with APK
         if: env.skip != 'true'
         run: |
-          cp app/build/outputs/apk/release/app-release.apk "BusBoard-${{ steps.version.outputs.tag }}.apk"
-          gh release create "${{ steps.version.outputs.tag }}" "BusBoard-${{ steps.version.outputs.tag }}.apk" \
+          cp app/build/outputs/apk/release/app-release.apk \
+            "BusBoard-${{ steps.version.outputs.tag }}.apk"
+
+          gh release create \
+            "${{ steps.version.outputs.tag }}" \
+            "BusBoard-${{ steps.version.outputs.tag }}.apk" \
             --title "BusBoard ${{ steps.version.outputs.tag }}" \
             --notes "BusBoard ${{ steps.version.outputs.tag }}: direct APK download from the update dialog, Out/Back widget direction (green/red bus numbers), signed release build."
         env:
