@@ -29,6 +29,7 @@ import java.util.concurrent.Future;
 public class MainActivity extends Activity {
     private static final String RELEASE_API="https://api.github.com/repos/ChaiMingKai/BusBoard/releases/latest";
     private static final String RELEASE_PAGE="https://github.com/ChaiMingKai/BusBoard/releases/latest";
+    private static final long[] LIVE_INTERVALS_MS={1000L,5000L,10000L,30000L};
     private static final int PAPER=0xfff5f6ed, INK=0xff123d34, GREEN=0xff006956,
             MUTED=0xff556b61, LIME=0xffe0f789, LINE=0xffcfdbcc, WHITE=Color.WHITE;
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -148,6 +149,8 @@ public class MainActivity extends Activity {
         LinearLayout pin=row();LinearLayout intro=column();intro.addView(text("Home screen widget",17,INK,"sans-serif-medium"));
         gap(intro,3);intro.addView(text(Board.widgetSlots(this).size()+" of "+Board.WIDGET_LIMIT+" services selected",13,MUTED,"sans-serif"));flex(pin,intro);
         pin.addView(button("Add widget",false,this::pin));content.addView(pin);
+        gap(content,9);
+        content.addView(button("Live refresh: every "+liveIntervalLabel(RefreshJob.liveIntervalMs(this)),false,this::chooseLiveInterval));
         gap(content,22);LinearLayout legend=row();legend.addView(image(R.drawable.sd),dp(24),dp(17));legend.addView(text("  Single-decker     ",12,MUTED,"sans-serif"));
         legend.addView(image(R.drawable.dd),dp(24),dp(17));legend.addView(text("  Double-decker",12,MUTED,"sans-serif"));content.addView(legend);
         gap(content,9);
@@ -157,6 +160,25 @@ public class MainActivity extends Activity {
         addOccupancyKey(crowdLegend,Board.Occupancy.LIMITED,"Limited");
         content.addView(crowdLegend);
         gap(content,12);content.addView(text("Arrivals via ArriveLah · LTA DataMall",11,MUTED,"sans-serif"));
+    }
+    private static String liveIntervalLabel(long intervalMs){
+        long seconds=intervalMs/1000L;
+        return seconds+(seconds==1?" second":" seconds");
+    }
+    private void chooseLiveInterval(){
+        long current=RefreshJob.liveIntervalMs(this);
+        String[] choices=new String[LIVE_INTERVALS_MS.length];
+        int checked=-1;
+        for(int i=0;i<LIVE_INTERVALS_MS.length;i++){
+            choices[i]=liveIntervalLabel(LIVE_INTERVALS_MS[i]);
+            if(LIVE_INTERVALS_MS[i]==current) checked=i;
+        }
+        new AlertDialog.Builder(this).setTitle("Live refresh interval")
+                .setSingleChoiceItems(choices,checked,(dialog,index)->{
+                    RefreshJob.setLiveIntervalMs(this,LIVE_INTERVALS_MS[index]);
+                    dialog.dismiss();
+                    render();
+                }).setNegativeButton("Cancel",null).show();
     }
     private void preview(){
         LinearLayout ticket=column(); ticket.setBackground(shape(WHITE,17,LINE)); ticket.setClipToOutline(true);content.addView(ticket);

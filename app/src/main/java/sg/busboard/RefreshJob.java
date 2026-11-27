@@ -13,10 +13,22 @@ import android.os.Looper;
 public final class RefreshJob extends JobService {
     private static final int REFRESH_JOB_ID=172;
     private static final int LIVE_JOB_ID=173;
-    private static final long LIVE_INTERVAL_MS=30000L;
+    private static final String LIVE_INTERVAL_KEY="live.interval_ms";
+    private static final long DEFAULT_LIVE_INTERVAL_MS=30000L;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private JobParameters runningLive;
 
+    static long liveIntervalMs(Context c) {
+        return Board.prefs(c).getLong(LIVE_INTERVAL_KEY,DEFAULT_LIVE_INTERVAL_MS);
+    }
+    static void setLiveIntervalMs(Context c,long intervalMs) {
+        boolean changed=intervalMs!=liveIntervalMs(c);
+        Board.prefs(c).edit().putLong(LIVE_INTERVAL_KEY,intervalMs).apply();
+        if(changed && BoardWidget.isLive(c)) {
+            stopLive(c);
+            startLive(c);
+        }
+    }
     static void start(Context c) {
         JobScheduler scheduler=c.getSystemService(JobScheduler.class);
         JobInfo job=new JobInfo.Builder(REFRESH_JOB_ID,new ComponentName(c,RefreshJob.class))
@@ -52,7 +64,7 @@ public final class RefreshJob extends JobService {
             }
             jobFinished(params,false);
             // Let JobService report completion before reusing the job ID.
-            if(live) handler.post(()->scheduleLive(this,LIVE_INTERVAL_MS));
+            if(live) handler.post(()->scheduleLive(this,liveIntervalMs(this)));
         }));
         return true;
     }
