@@ -1,0 +1,3 @@
+<resources>
+    <item name="widget_direction_refresh" type="layout">@layout/widget</item>
+</resources>

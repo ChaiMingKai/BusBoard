@@ -1,11 +1,12 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/board" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/widget_bg" android:padding="13dp">
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/board" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="top" android:background="@drawable/widget_bg" android:padding="13dp">
   <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical">
     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:text="Bus Board" android:textColor="#FFFFFF" android:fontFamily="sans-serif-medium" android:textSize="19sp"/>
     <Chronometer android:id="@+id/age" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#C5DDCF" android:textSize="10sp"/>
     <TextView android:id="@+id/asof" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#C5DDCF" android:textSize="10sp"/>
+    <Button android:id="@+id/widget_page" android:layout_width="36dp" android:layout_height="match_parent" android:minWidth="0dp" android:minHeight="0dp" android:padding="0dp" android:background="@android:color/transparent" android:textColor="#C5DDCF" android:textSize="11sp" android:visibility="gone"/>
     <Button android:id="@+id/live" android:layout_width="44dp" android:layout_height="28dp" android:layout_marginStart="4dp" android:minWidth="0dp" android:minHeight="0dp" android:padding="0dp" android:background="@android:color/transparent" android:text="Live" android:textAllCaps="false" android:textColor="#C5DDCF" android:textSize="12sp" android:contentDescription="Live refresh off"/>
     <ImageButton android:id="@+id/refresh" android:layout_width="42dp" android:layout_height="match_parent" android:background="@android:color/transparent" android:src="@drawable/refresh" android:contentDescription="Refresh arrivals"/>
   </LinearLayout>
   <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="14dp" android:textColor="#D5E5D8" android:text="Tap to choose your stops and services." android:textSize="14sp"/>
-  <LinearLayout android:id="@+id/rows" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+  <LinearLayout android:id="@+id/rows" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical"/>
 </LinearLayout>

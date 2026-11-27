@@ -59,7 +59,7 @@ final class Board {
     }
     static void setWidgetBack(Context c,String stopId,boolean back) {
         prefs(c).edit().putBoolean(WIDGET_BACK_PREFIX+stopId,back).apply();
-        BoardWidget.draw(c);
+        BoardWidget.redrawDirections(c);
     }
     static void save(Context c,List<Slot> list) {
         JSONArray rows = new JSONArray();

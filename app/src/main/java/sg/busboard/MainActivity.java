@@ -26,11 +26,13 @@ public class MainActivity extends BoardActivity {
     private static final String RELEASE_PAGE="https://github.com/ChaiMingKai/BusBoard/releases/latest";
     private static final String RELEASE_DOWNLOADS="https://github.com/ChaiMingKai/BusBoard/releases/download/";
     private static final String VERSION_PATTERN="[0-9]+(\\.[0-9]+)*";
-    private static final String LAST_UPDATE_CHECK="updates.last_check_ms";
-    private static final long UPDATE_CHECK_INTERVAL_MS=60*60*1000L;
+    private static final String LAST_UPDATE_CHECK="updates.last_successful_start_ms";
+    private static final String DISMISSED_UPDATE="updates.dismissed_version";
+    private static final long UPDATE_CHECK_INTERVAL_MS=60_000L;
     private final Runnable tick=new Runnable(){ public void run(){ refresh(); handler.postDelayed(this,30000); } };
     private boolean loading, resumed;
     private UpdateCheck updateCheck;
+    private AlertDialog updateDialog;
 
     private static final class UpdateCheck {
         final CompletableFuture<UpdateResult> result;
@@ -70,10 +72,15 @@ public class MainActivity extends BoardActivity {
         long now=System.currentTimeMillis();
         long last=prefs.getLong(LAST_UPDATE_CHECK,0);
         if(!manual && last>0 && now>=last && now-last<UPDATE_CHECK_INTERVAL_MS) return;
-        prefs.edit().putLong(LAST_UPDATE_CHECK,now).apply();
-
         Context context=getApplicationContext();
-        updateCheck=new UpdateCheck(CompletableFuture.supplyAsync(()->fetchUpdate(context)),manual);
+        updateCheck=new UpdateCheck(CompletableFuture.supplyAsync(()->{
+            UpdateResult result=fetchUpdate(context);
+            SharedPreferences.Editor edit=prefs.edit();
+            if(result.success) edit.putLong(LAST_UPDATE_CHECK,now);
+            else edit.remove(LAST_UPDATE_CHECK);
+            edit.apply();
+            return result;
+        }),manual);
         observeUpdateCheck();
     }
 
@@ -81,20 +88,30 @@ public class MainActivity extends BoardActivity {
         updateCheck.result.thenRun(()->handler.post(this::showUpdateResult));
     }
 
-    private void showUpdateResult(){
-        if(!resumed || isFinishing() || isDestroyed() || updateCheck==null) return;
+    private boolean showUpdateResult(){
+        if(!resumed || isFinishing() || isDestroyed() || updateCheck==null) return false;
         UpdateResult result=updateCheck.result.getNow(null);
-        if(result==null) return;
+        if(result==null) return false;
         boolean manual=updateCheck.manual;
         updateCheck=null;
         if(result.newerVersion!=null){
-            new AlertDialog.Builder(this).setTitle("Update available")
+            SharedPreferences prefs=Board.prefs(this);
+            String dismissed=prefs.getString(DISMISSED_UPDATE,null);
+            if(!manual && dismissed!=null && !isNewerVersion(result.newerVersion,dismissed)) return false;
+            if(updateDialog!=null) updateDialog.dismiss();
+            updateDialog=new AlertDialog.Builder(this).setTitle("Update available")
                     .setMessage("Bus Board "+result.newerVersion+" is available.")
                     .setPositiveButton("Update",(dialog,which)->openUpdate(result.newerVersion))
-                    .setNegativeButton("Later",null).show();
+                    .setNegativeButton("Later",(dialog,which)->{
+                        if(dismissed==null || isNewerVersion(result.newerVersion,dismissed)){
+                            prefs.edit().putString(DISMISSED_UPDATE,result.newerVersion).apply();
+                        }
+                    }).show();
+            return true;
         } else if(manual){
             Toast.makeText(this,result.success?"You're up to date":"Couldn't check for updates. Try again later.",Toast.LENGTH_SHORT).show();
         }
+        return false;
     }
 
     private void openUpdate(String version){
@@ -154,9 +171,8 @@ public class MainActivity extends BoardActivity {
     @Override public void onResume(){
         super.onResume();
         resumed=true;
+        if(!showUpdateResult()) checkForUpdate(false);
         tick.run();
-        checkForUpdate(false);
-        showUpdateResult();
     }
     @Override public void onPause(){resumed=false;handler.removeCallbacks(tick);super.onPause();}
     private void refresh(){
