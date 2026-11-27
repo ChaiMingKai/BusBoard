@@ -2,6 +2,8 @@ package sg.busboard;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import org.json.*;
 import java.io.*;
 import java.net.*;
@@ -12,7 +14,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 final class Board {
-    static final int WIDGET_LIMIT = 4;
+    static final int WIDGET_LIMIT = 8;
     static final long MAX_AGE = 180000L;
     static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.UK).withZone(ZoneId.of("Asia/Singapore"));
     static final class Stop {
@@ -186,6 +188,6 @@ final class Board {
         List<CompletableFuture<Void>> futures=new ArrayList<>();
         for(String id:stops) futures.add(request(c,id));
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[0]))
-                .thenRun(()->BoardWidget.draw(c));
+                .thenRunAsync(()->BoardWidget.draw(c),new Handler(Looper.getMainLooper())::post);
     }
 }

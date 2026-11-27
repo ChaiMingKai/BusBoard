@@ -3,13 +3,21 @@ package sg.busboard;
 import android.app.*;
 import android.appwidget.AppWidgetManager;
 import android.content.*;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.*;
 import android.text.*;
 import android.view.*;
 import android.widget.*;
+import org.json.JSONException;
+import org.json.JSONObject;
+import java.io.IOException;
+import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -19,6 +27,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public class MainActivity extends Activity {
+    private static final String RELEASE_API="https://api.github.com/repos/ChaiMingKai/BusBoard/releases/latest";
+    private static final String RELEASE_PAGE="https://github.com/ChaiMingKai/BusBoard/releases/latest";
     private static final int PAPER=0xfff5f6ed, INK=0xff123d34, GREEN=0xff006956,
             MUTED=0xff556b61, LIME=0xffe0f789, LINE=0xffcfdbcc, WHITE=Color.WHITE;
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -67,6 +77,45 @@ public class MainActivity extends Activity {
             try{return Board.catalog(this);}catch(Exception e){return Collections.<Board.Stop>emptyList();}
         }).thenAccept(list->runOnUiThread(()->{catalog=list;if(!isDestroyed())render();}));
         render();
+        if(state==null) CompletableFuture.runAsync(this::checkForUpdate);
+    }
+    private void checkForUpdate(){
+        HttpURLConnection connection=null;
+        try {
+            String installed=getPackageManager().getPackageInfo(getPackageName(),0).versionName;
+            connection=(HttpURLConnection)new URL(RELEASE_API).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept","application/vnd.github+json");
+            connection.setRequestProperty("User-Agent","BusBoard/"+installed);
+            if(connection.getResponseCode()!=HttpURLConnection.HTTP_OK) return;
+            String tag=new JSONObject(Board.read(connection.getInputStream())).getString("tag_name");
+            String latest=tag.startsWith("v")?tag.substring(1):tag;
+            if(isNewerVersion(latest,installed)) runOnUiThread(()->{
+                if(!resumed || isFinishing() || isDestroyed()) return;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASE_PAGE)));
+                } catch(ActivityNotFoundException | SecurityException ignored) { }
+            });
+        } catch(IOException | JSONException | PackageManager.NameNotFoundException ignored) {
+        } finally {
+            if(connection!=null) connection.disconnect();
+        }
+    }
+    private static boolean isNewerVersion(String latest,String installed){
+        String versionPattern="[0-9]+(\\.[0-9]+)*";
+        if(installed==null || !latest.matches(versionPattern) || !installed.matches(versionPattern)) return false;
+        String[] available=latest.split("\\.");
+        String[] current=installed.split("\\.");
+        for(int i=0;i<Math.max(available.length,current.length);i++){
+            BigInteger next=i<available.length?new BigInteger(available[i]):BigInteger.ZERO;
+            BigInteger previous=i<current.length?new BigInteger(current[i]):BigInteger.ZERO;
+            int order=next.compareTo(previous);
+            if(order!=0) return order>0;
+        }
+        return false;
     }
     @Override public void onResume(){super.onResume();resumed=true;tick.run();}
     @Override public void onPause(){resumed=false;handler.removeCallbacks(tick);super.onPause();}
@@ -97,7 +146,7 @@ public class MainActivity extends Activity {
         }
         gap(content,18);rule(content);gap(content,15);
         LinearLayout pin=row();LinearLayout intro=column();intro.addView(text("Home screen widget",17,INK,"sans-serif-medium"));
-        gap(intro,3);intro.addView(text(Board.widgetSlots(this).size()+" of 4 services selected",13,MUTED,"sans-serif"));flex(pin,intro);
+        gap(intro,3);intro.addView(text(Board.widgetSlots(this).size()+" of "+Board.WIDGET_LIMIT+" services selected",13,MUTED,"sans-serif"));flex(pin,intro);
         pin.addView(button("Add widget",false,this::pin));content.addView(pin);
         gap(content,22);LinearLayout legend=row();legend.addView(image(R.drawable.sd),dp(24),dp(17));legend.addView(text("  Single-decker     ",12,MUTED,"sans-serif"));
         legend.addView(image(R.drawable.dd),dp(24),dp(17));legend.addView(text("  Double-decker",12,MUTED,"sans-serif"));content.addView(legend);
@@ -173,7 +222,7 @@ public class MainActivity extends Activity {
         for(int i=0;i<slots.size();i++){
             Board.Slot s=slots.get(i); names[i]=s.service+"  ·  "+s.name+" ("+s.id+")"; checked[i]=s.pinned;
         }
-        new AlertDialog.Builder(this).setTitle("Widget services · up to 4")
+        new AlertDialog.Builder(this).setTitle("Widget services · up to "+Board.WIDGET_LIMIT)
                 .setMultiChoiceItems(names,checked,(dialog,index,value)->{
                     checked[index]=value;
                     int count=0;for(boolean selected:checked) if(selected) count++;

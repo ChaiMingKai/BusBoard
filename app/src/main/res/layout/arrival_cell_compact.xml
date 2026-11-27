@@ -1,0 +1,13 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/arrival_cell" android:layout_width="0dp" android:layout_height="wrap_content"
+    android:layout_weight="1" android:gravity="center" android:baselineAligned="false"
+    android:importantForAccessibility="yes">
+    <TextView android:id="@+id/eta" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:gravity="center" android:includeFontPadding="false" android:singleLine="true"
+        android:fontFamily="sans-serif-medium" android:fontFeatureSettings="tnum"
+        android:textColor="#FFFFFF" android:textSize="13sp" android:importantForAccessibility="no"/>
+    <ImageView android:id="@+id/deck" android:layout_width="14dp" android:layout_height="10dp"
+        android:layout_marginStart="2dp" android:scaleType="fitCenter" android:importantForAccessibility="no"/>
+    <ImageView android:id="@+id/crowd" android:layout_width="10dp" android:layout_height="10dp"
+        android:layout_marginStart="2dp" android:scaleType="fitCenter" android:importantForAccessibility="no"/>
+</LinearLayout>
