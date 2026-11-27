@@ -13,6 +13,8 @@ public final class BoardWidget extends AppWidgetProvider {
     private static final String TOGGLE_LIVE="sg.busboard.TOGGLE_LIVE";
     private static final String LIVE_ENABLED="widget.live";
     private static final int STANDARD_ROWS=4;
+    private static final int OUT_COLOR=0xff17613a;
+    private static final int BACK_COLOR=0xffa3222a;
 
     static boolean isLive(Context c) {
         return Board.prefs(c).getBoolean(LIVE_ENABLED,false);
@@ -107,6 +109,7 @@ public final class BoardWidget extends AppWidgetProvider {
             Board.Predictions predictions=new Board.Predictions(c,s,now);
             RemoteViews row=new RemoteViews(c.getPackageName(),compact?R.layout.row_compact:R.layout.row);
             row.setTextViewText(R.id.service,s.service);
+            row.setTextColor(R.id.service,Board.isWidgetBack(c,s.id)?BACK_COLOR:OUT_COLOR);
             String status=predictions.status(now);
             row.setTextViewText(R.id.stop,s.name+" · "+s.id+(status.isEmpty()?"":" · "+status));
             row.setViewVisibility(R.id.separator,index==0?View.INVISIBLE:View.VISIBLE);

@@ -15,6 +15,7 @@ import java.util.concurrent.*;
 
 final class Board {
     static final int WIDGET_LIMIT = 8;
+    private static final String WIDGET_BACK_PREFIX = "widget.back.";
     static final long MAX_AGE = 180000L;
     static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.UK).withZone(ZoneId.of("Asia/Singapore"));
     static final class Stop {
@@ -52,6 +53,13 @@ final class Board {
         List<Slot> selected=new ArrayList<>();
         for(Slot slot:slots(c)) if(slot.pinned && selected.size()<WIDGET_LIMIT) selected.add(slot);
         return selected;
+    }
+    static boolean isWidgetBack(Context c,String stopId) {
+        return prefs(c).getBoolean(WIDGET_BACK_PREFIX+stopId,false);
+    }
+    static void setWidgetBack(Context c,String stopId,boolean back) {
+        prefs(c).edit().putBoolean(WIDGET_BACK_PREFIX+stopId,back).apply();
+        BoardWidget.draw(c);
     }
     static void save(Context c,List<Slot> list) {
         JSONArray rows = new JSONArray();

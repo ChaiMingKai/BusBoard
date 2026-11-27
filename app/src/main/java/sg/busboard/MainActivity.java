@@ -23,6 +23,8 @@ import java.util.concurrent.CompletableFuture;
 public class MainActivity extends BoardActivity {
     private static final String RELEASE_API="https://api.github.com/repos/ChaiMingKai/BusBoard/releases/latest";
     private static final String RELEASE_PAGE="https://github.com/ChaiMingKai/BusBoard/releases/latest";
+    private static final String RELEASE_DOWNLOADS="https://github.com/ChaiMingKai/BusBoard/releases/download/";
+    private static final String VERSION_PATTERN="[0-9]+(\\.[0-9]+)*";
     private static final String LAST_UPDATE_CHECK="updates.last_check_ms";
     private static final long UPDATE_CHECK_INTERVAL_MS=60*60*1000L;
     private final Runnable tick=new Runnable(){ public void run(){ refresh(); handler.postDelayed(this,30000); } };
@@ -87,11 +89,24 @@ public class MainActivity extends BoardActivity {
         if(result.newerVersion!=null){
             new AlertDialog.Builder(this).setTitle("Update available")
                     .setMessage("Bus Board "+result.newerVersion+" is available.")
-                    .setPositiveButton("Update",(dialog,which)->openReleasePage())
+                    .setPositiveButton("Update",(dialog,which)->openUpdate(result.newerVersion))
                     .setNegativeButton("Later",null).show();
         } else if(manual){
             Toast.makeText(this,result.success?"You're up to date":"Couldn't check for updates. Try again later.",Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void openUpdate(String version){
+        if(version!=null && version.matches(VERSION_PATTERN)){
+            String tag="v"+version;
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASE_DOWNLOADS+tag+"/BusBoard-"+tag+".apk")));
+                return;
+            } catch(ActivityNotFoundException | SecurityException ignored) {
+                // Try the release page if the APK link cannot be opened.
+            }
+        }
+        openReleasePage();
     }
 
     private void openReleasePage(){
@@ -124,8 +139,7 @@ public class MainActivity extends BoardActivity {
         }
     }
     private static boolean isNewerVersion(String latest,String installed){
-        String versionPattern="[0-9]+(\\.[0-9]+)*";
-        if(installed==null || !latest.matches(versionPattern) || !installed.matches(versionPattern)) return false;
+        if(installed==null || !latest.matches(VERSION_PATTERN) || !installed.matches(VERSION_PATTERN)) return false;
         String[] available=latest.split("\\.");
         String[] current=installed.split("\\.");
         for(int i=0;i<Math.max(available.length,current.length);i++){
@@ -172,9 +186,14 @@ public class MainActivity extends BoardActivity {
             for(int i=0;i<slots.size();i++){savedCard(slots.get(i),i);gap(content,9);}
         }
         gap(content,18);rule(content);gap(content,15);
+        List<Board.Slot> widgetSlots=Board.widgetSlots(this);
         LinearLayout pin=row();LinearLayout intro=column();intro.addView(text("Home screen widget",17,INK,"sans-serif-medium"));
-        gap(intro,3);intro.addView(text(Board.widgetSlots(this).size()+" of "+Board.WIDGET_LIMIT+" services selected",13,MUTED,"sans-serif"));flex(pin,intro);
+        gap(intro,3);intro.addView(text(widgetSlots.size()+" of "+Board.WIDGET_LIMIT+" services selected",13,MUTED,"sans-serif"));flex(pin,intro);
         pin.addView(button("Add widget",false,this::pin));content.addView(pin);
+        Set<String> shownStops=new HashSet<>();
+        for(Board.Slot slot:widgetSlots){
+            if(shownStops.add(slot.id)) addWidgetDirection(slot);
+        }
         gap(content,9);
         content.addView(button("Live refresh: every "+liveIntervalLabel(RefreshJob.liveIntervalMs(this)),false,this::chooseLiveInterval));
         gap(content,22);LinearLayout legend=row();legend.addView(image(R.drawable.sd),dp(24),dp(17));legend.addView(text("  Single-decker     ",12,MUTED,"sans-serif"));
@@ -192,6 +211,20 @@ public class MainActivity extends BoardActivity {
         }));
         gap(content,12);content.addView(text("Arrivals via ArriveLah · LTA DataMall",11,MUTED,"sans-serif"));
     }
+    private void addWidgetDirection(Board.Slot slot){
+        gap(content,9);
+        LinearLayout line=row();
+        flex(line,text(slot.name+" ("+slot.id+")",14,INK,"sans-serif"));
+        String direction=Board.isWidgetBack(this,slot.id)?"Back":"Out";
+        TextView toggle=button(direction,false,()->{
+            Board.setWidgetBack(this,slot.id,!Board.isWidgetBack(this,slot.id));
+            render();
+        });
+        toggle.setContentDescription(slot.name+" ("+slot.id+"), widget direction "+direction+". Tap to switch.");
+        line.addView(toggle);
+        content.addView(line);
+    }
+
     private static String liveIntervalLabel(long intervalMs){
         long seconds=intervalMs/1000L;
         return seconds+(seconds==1?" second":" seconds");
